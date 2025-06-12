@@ -4,4 +4,4 @@ matplotlib>=3.7.1
 torchvision>=0.14.1
 opencv-python>=4.8.0.74
 tqdm>=4.65.0
-yaml>=0.2.1
+pyyaml>=0.2.1
