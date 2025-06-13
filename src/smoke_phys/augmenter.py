@@ -30,6 +30,8 @@ class PhysicsAugmenter:
         self.base_dataset = base_dataset
         self.device = device
         self.sim = SmokeSimulator(resolution=resolution, device=device)
+        self.smoke_cache = []  # 初始化缓存
+        self._precompute_smoke()  # 预计算第一批烟雾纹理
         
     def __len__(self):
         return len(self.base_dataset)
@@ -38,7 +40,11 @@ class PhysicsAugmenter:
         img, label = self.base_dataset[idx]
         img = img.to(self.device)
         
-        # Generate smoke texture in batches
+        # 确保缓存非空
+        if not self.smoke_cache:
+            self._precompute_smoke()
+            
+        # 检查是否需要生成新的批次
         if idx % 100 == 0:
             self._precompute_smoke()
         
@@ -57,7 +63,7 @@ class PhysicsAugmenter:
     
     def _precompute_smoke(self):
         """Precompute smoke textures in batches"""
-        self.smoke_cache = []
+        self.smoke_cache.clear()  # 清空旧缓存
         for _ in range(100):
             pos = (np.random.uniform(0.3, 0.7), np.random.uniform(0.3, 0.7))
             self.sim.add_heat_source(pos, np.random.uniform(0.4, 0.8))
