@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from tqdm import tqdm
 import time
+from smoke_phys.utils import cuda_timer, optimize_cuda_cache, batch_to_gpu
 
 def train_model():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,6 +56,17 @@ def train_model():
     checkpoint_dir = "models/checkpoints"
     os.makedirs(checkpoint_dir, exist_ok=True)
     
+    # 优化CUDA缓存
+    optimize_cuda_cache()
+    
+    # 使用多个CUDA流
+    data_stream = torch.cuda.Stream()
+    compute_stream = torch.cuda.Stream()
+    
+    # 预热CUDA缓存
+    with torch.cuda.amp.autocast():
+        model(torch.randn(1, 1, 128, 128, device=device))
+    
     start_time = time.time()
     for epoch in range(10):
         epoch_start = time.time()
@@ -65,27 +77,30 @@ def train_model():
         progress_bar = tqdm(train_loader, desc=f'Epoch {epoch+1}/10')
         
         for batch_idx, (images, labels) in enumerate(progress_bar):
-            images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
+            # 异步数据加载
+            with torch.cuda.stream(data_stream):
+                images, labels = batch_to_gpu((images, labels), device)
             
-            with torch.cuda.amp.autocast():
-                outputs, reg = model(images)
-                task_loss = F.cross_entropy(outputs, labels.long())
-                loss = task_loss + 0.5 * reg
-            
-            # Optimize with mixed precision
-            optimizer.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            
-            total_loss += loss.item()
-            
-            # Update progress bar info
-            progress_bar.set_postfix({
-                'Loss': f'{loss.item():.4f}',
-                'Task Loss': f'{task_loss.item():.4f}',
-                'Reg Loss': f'{reg.item():.4f}'
-            })
+            # 计算流水线
+            torch.cuda.synchronize()
+            with torch.cuda.stream(compute_stream), cuda_timer("Forward-Backward"):
+                with torch.cuda.amp.autocast():
+                    outputs, reg = model(images)
+                    task_loss = F.cross_entropy(outputs, labels.long())
+                    loss = task_loss + 0.5 * reg
+                
+                optimizer.zero_grad(set_to_none=True)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                
+            # 异步更新进度条
+            if batch_idx % 10 == 0:
+                progress_bar.set_postfix({
+                    'Loss': f'{loss.item():.4f}',
+                    'Task Loss': f'{task_loss.item():.4f}',
+                    'Reg Loss': f'{reg.item():.4f}'
+                })
         
         epoch_time = time.time() - epoch_start
         val_acc = validate_model(model, device)

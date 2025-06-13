@@ -3,6 +3,7 @@
 
 import torch
 import torch.nn.functional as F
+from contextlib import nullcontext
 
 class SmokeSimulator:
     def __init__(self, resolution=256, device='cpu'):
@@ -34,6 +35,16 @@ class SmokeSimulator:
         )
         # Precompute reusable tensors
         self.grid = torch.stack([self.grid_x, self.grid_y], dim=-1).unsqueeze(0)
+        
+        # 预分配CUDA内存以减少动态分配
+        self.buffer1 = torch.zeros(2, resolution, resolution, device=device)
+        self.buffer2 = torch.zeros(2, resolution, resolution, device=device)
+        
+        # 使用固定内存加速CPU到GPU传输
+        self.cpu_buffer = torch.zeros(2, resolution, resolution).pin_memory()
+        
+        # CUDA Stream for async operations
+        self.stream = torch.cuda.Stream() if device == 'cuda' else None
         
     def add_heat_source(self, position, intensity):
         """添加热源"""
@@ -96,19 +107,47 @@ class SmokeSimulator:
         return -slope.item()
 
     def step(self):
-        """单步模拟"""
-        self.lorenz_step()
-        self.diffuse_velocity()
-        self.advect_velocity()
-        
-        # 添加混沌扰动
-        perturb = 0.05 * torch.tensor([self.lx, self.ly], 
-                                    device=self.device).view(2,1,1)
-        self.velocity += perturb
-        
-        # 更新温度场
-        self.temperature *= 0.99
-        self.density = torch.clamp(self.density + self.temperature * self.dt, 0, 1)
+        """单步模拟优化版本"""
+        with torch.cuda.stream(self.stream) if self.stream else nullcontext():
+            # 使用预分配的buffer
+            torch.cuda.synchronize()  # 确保之前的计算完成
+            
+            self.lorenz_step()
+            
+            # 使用融合操作减少内存访问
+            self._fused_diffuse_advect()
+            
+            # 异步更新温度场
+            self._async_temperature_update()
+            
+    def _fused_diffuse_advect(self):
+        """融合扩散和对流计算"""
+        with torch.cuda.amp.autocast():
+            # 使用预分配buffer减少内存分配
+            self.buffer1.copy_(self.velocity)
+            
+            # Fused operation
+            laplacian = F.conv2d(self.buffer1.unsqueeze(0), 
+                               self.laplace_kernel, padding=1, groups=2)
+            self.velocity.add_(self.dt * self.viscosity * laplacian.squeeze(0))
+            
+            # 优化对流计算
+            displacement = self._compute_displacement()
+            self.velocity.copy_(F.grid_sample(
+                self.buffer1.unsqueeze(0),
+                displacement,
+                mode='bilinear',
+                padding_mode='border',
+                align_corners=False
+            ).squeeze(0))
+            
+    def _async_temperature_update(self):
+        """异步温度场更新"""
+        if self.stream:
+            with torch.cuda.stream(self.stream):
+                self.temperature.mul_(0.99)
+                self.density.addcmul_(self.temperature, self.dt)
+                self.density.clamp_(0, 1)
 
     def run_steps(self, steps=100):
         """运行多步模拟"""
