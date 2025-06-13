@@ -11,10 +11,12 @@ from models.model import PhysicsAwareNet
 from smoke_phys.augmenter import PhysicsAugmenter
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
+from tqdm import tqdm
+import time
 
 def train_model():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    print(f"[INFO] Using device: {device}")
     
     # 数据预处理
     transform = transforms.Compose([
@@ -35,16 +37,28 @@ def train_model():
     model = PhysicsAwareNet(num_classes=10).to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     
-    # 训练循环
+    # Print training configuration
+    print("\n=== Training Configuration ===")
+    print(f"Batch Size: 64")
+    print(f"Learning Rate: 1e-3")
+    print(f"Total Epochs: 10")
+    print(f"Dataset Size: {len(train_dataset)}")
+    print("===========================\n")
+    
     best_acc = 0.0
     checkpoint_dir = "models/checkpoints"
     os.makedirs(checkpoint_dir, exist_ok=True)
     
+    start_time = time.time()
     for epoch in range(10):
+        epoch_start = time.time()
         model.train()
         total_loss = 0
         
-        for images, labels in train_loader:
+        # Create progress bar
+        progress_bar = tqdm(train_loader, desc=f'Epoch {epoch+1}/10')
+        
+        for batch_idx, (images, labels) in enumerate(progress_bar):
             images, labels = images.to(device), labels.to(device)
             
             # 前向传播
@@ -58,16 +72,26 @@ def train_model():
             optimizer.step()
             
             total_loss += loss.item()
+            
+            # Update progress bar info
+            progress_bar.set_postfix({
+                'Loss': f'{loss.item():.4f}',
+                'Task Loss': f'{task_loss.item():.4f}',
+                'Reg Loss': f'{reg.item():.4f}'
+            })
         
-        # 验证
+        epoch_time = time.time() - epoch_start
         val_acc = validate_model(model, device)
-        print(f"Epoch {epoch+1} | Loss: {total_loss/len(train_loader):.4f} | Acc: {val_acc:.2%}")
+        print(f"\n[Epoch {epoch+1} Statistics]")
+        print(f"Average Loss: {total_loss/len(train_loader):.4f}")
+        print(f"Validation Accuracy: {val_acc:.2%}")
+        print(f"Time Elapsed: {epoch_time:.2f}s")
         
         # 保存最佳模型
         if val_acc > best_acc:
             best_acc = val_acc
             torch.save(model.state_dict(), f"{checkpoint_dir}/best_model.pth")
-            print(f"New best model saved with accuracy: {best_acc:.2%}")
+            print(f"[SAVE] New best model saved (Accuracy: {best_acc:.2%})")
         
         # 定期保存checkpoint
         if (epoch + 1) % 2 == 0:
@@ -78,13 +102,18 @@ def train_model():
                 'loss': total_loss/len(train_loader),
                 'accuracy': val_acc
             }, f"{checkpoint_dir}/checkpoint_epoch_{epoch+1}.pth")
-            print(f"Checkpoint saved at epoch {epoch+1}")
+            print(f"[SAVE] Checkpoint saved for epoch {epoch+1}")
     
-    # 保存最终模型
-    torch.save(model.state_dict(), "models/phys_aware.pth")
+    total_time = time.time() - start_time
+    print("\n=== Training Complete ===")
+    print(f"Total Training Time: {total_time/60:.2f} minutes")
+    print(f"Best Accuracy: {best_acc:.2%}")
+    print(f"Final model saved to: models/phys_aware.pth")
+    
     return model
 
 def validate_model(model, device):
+    print("\nStarting validation...")
     model.eval()
     correct = 0
     total = 0
@@ -110,4 +139,6 @@ def validate_model(model, device):
     return correct / total
 
 if __name__ == "__main__":
+    print("\n=== Starting Physics-Aware Model Training ===")
     train_model()
+    print("=== Training Finished ===")

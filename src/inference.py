@@ -4,7 +4,10 @@
 import torch
 import cv2
 import numpy as np
+from torchvision import transforms
+import torch.nn.functional as F
 from smoke_phys.simulator import SmokeSimulator
+from smoke_phys.augmenter import calculate_fractal_dim
 from models.model import PhysicsAwareNet
 
 class PhysicsInference:

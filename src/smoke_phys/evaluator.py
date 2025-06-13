@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from smoke_phys.simulator import SmokeSimulator
 from tqdm import tqdm
+import numpy as np
+import torch.nn.functional as F
 
 class PhysRobustnessEvaluator:
     """
