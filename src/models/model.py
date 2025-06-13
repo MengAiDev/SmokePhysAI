@@ -37,7 +37,10 @@ class PhysicsAwareNet(nn.Module):
         
         for layer in self.feature_extractor:
             if isinstance(layer, PhysicsGuidedAttention):
-                x, reg = layer(x)
+                if self.training and hasattr(self, 'use_checkpointing'):
+                    x, reg = torch.utils.checkpoint.checkpoint(layer, x)
+                else:
+                    x, reg = layer(x)
                 regs.append(reg)
             else:
                 x = layer(x)

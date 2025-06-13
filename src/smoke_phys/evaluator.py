@@ -97,43 +97,48 @@ class PhysRobustnessEvaluator:
         }
         
         for reynolds in tqdm(reynolds_list, desc="湍流测试"):
-            # 创建对应雷诺数的模拟器
-            sim = SmokeSimulator(resolution=28, reynolds=reynolds, device=self.device)
+            sim = SmokeSimulator(resolution=28, device=self.device)
             
-            total_correct = 0
-            total_loss = 0
-            total_samples = 0
-            total_fractal_dim = 0
+            # Process in larger batches
+            batch_acc = []
+            batch_loss = []
+            batch_fractal = []
             
             for images, labels in dataloader:
-                images = images.to(self.device)
-                labels = labels.to(self.device)
+                images = images.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
                 
-                # 生成湍流扰动
-                perturbed_images, fractal_dim = self._apply_turbulence_perturbation(images, sim)
-                total_fractal_dim += fractal_dim
-                
-                # 模型推理
-                with torch.no_grad():
-                    outputs, _ = self.model(perturbed_images)
-                    loss = self.criterion(outputs, labels)
-                
-                # 统计结果
-                _, predicted = torch.max(outputs, 1)
-                total_correct += (predicted == labels).sum().item()
-                total_loss += loss.item() * images.size(0)
-                total_samples += images.size(0)
+                # Process in chunks for memory efficiency
+                chunk_size = 16
+                for i in range(0, len(images), chunk_size):
+                    chunk = images[i:i+chunk_size]
+                    chunk_labels = labels[i:i+chunk_size]
+                    
+                    perturbed, fractal_dim = self._apply_turbulence_perturbation(
+                        chunk, sim
+                    )
+                    
+                    with torch.no_grad(), torch.cuda.amp.autocast():
+                        outputs, _ = self.model(perturbed)
+                        loss = self.criterion(outputs, chunk_labels)
+                    
+                    _, predicted = torch.max(outputs, 1)
+                    correct = (predicted == chunk_labels)
+                    
+                    batch_acc.append(correct.float().mean())
+                    batch_loss.append(loss)
+                    batch_fractal.append(fractal_dim)
             
-            # 计算指标
-            accuracy = total_correct / total_samples
-            avg_loss = total_loss / total_samples
-            avg_fractal_dim = total_fractal_dim / total_samples
+            # Aggregate results
+            accuracy = torch.mean(torch.stack(batch_acc)).item()
+            avg_loss = torch.mean(torch.stack(batch_loss)).item()
+            avg_fractal = torch.mean(torch.tensor(batch_fractal)).item()
             
             results['accuracies'].append(accuracy)
             results['losses'].append(avg_loss)
-            results['fractal_dims'].append(avg_fractal_dim)
+            results['fractal_dims'].append(avg_fractal)
             
-            print(f"雷诺数 {reynolds} | 准确率: {accuracy*100:.2f}% | 损失: {avg_loss:.4f} | 分形维度: {avg_fractal_dim:.3f}")
+            print(f"雷诺数 {reynolds} | 准确率: {accuracy*100:.2f}% | 损失: {avg_loss:.4f} | 分形维度: {avg_fractal:.3f}")
         
         return results
 

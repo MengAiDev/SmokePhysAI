@@ -38,10 +38,11 @@ class PhysicsAugmenter:
         img, label = self.base_dataset[idx]
         img = img.to(self.device)
         
-        # 生成烟雾纹理
-        pos = (np.random.uniform(0.3, 0.7), np.random.uniform(0.3, 0.7))
-        self.sim.add_heat_source(pos, np.random.uniform(0.4, 0.8))
-        smoke_tex = self.sim.run_steps(np.random.randint(20, 80))
+        # Generate smoke texture in batches
+        if idx % 100 == 0:
+            self._precompute_smoke()
+        
+        smoke_tex = self.smoke_cache[idx % 100]
         
         # 计算分形参数
         alpha = calculate_fractal_dim(smoke_tex)
@@ -53,6 +54,14 @@ class PhysicsAugmenter:
         updated_label = self.adjust_bbox(label, smoke_tex)
         
         return augmented_img.cpu(), updated_label
+    
+    def _precompute_smoke(self):
+        """Precompute smoke textures in batches"""
+        self.smoke_cache = []
+        for _ in range(100):
+            pos = (np.random.uniform(0.3, 0.7), np.random.uniform(0.3, 0.7))
+            self.sim.add_heat_source(pos, np.random.uniform(0.4, 0.8))
+            self.smoke_cache.append(self.sim.run_steps(np.random.randint(20, 80)))
     
     def physical_blend(self, img, smoke, alpha):
         """物理启发的混合"""

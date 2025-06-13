@@ -16,6 +16,7 @@ import time
 
 def train_model():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
     print(f"[INFO] Using device: {device}")
     
     # 数据预处理
@@ -35,6 +36,11 @@ def train_model():
     
     # 初始化模型
     model = PhysicsAwareNet(num_classes=10).to(device)
+    model.apply(lambda m: setattr(m, 'use_checkpointing', True) if hasattr(m, 'use_checkpointing') else None)
+    
+    # Mixed precision training
+    scaler = torch.cuda.amp.GradScaler()
+    
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     
     # Print training configuration
@@ -59,17 +65,18 @@ def train_model():
         progress_bar = tqdm(train_loader, desc=f'Epoch {epoch+1}/10')
         
         for batch_idx, (images, labels) in enumerate(progress_bar):
-            images, labels = images.to(device), labels.to(device)
+            images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
             
-            # 前向传播
-            outputs, reg = model(images)
-            task_loss = F.cross_entropy(outputs, labels.long())
-            loss = task_loss + 0.5 * reg
+            with torch.cuda.amp.autocast():
+                outputs, reg = model(images)
+                task_loss = F.cross_entropy(outputs, labels.long())
+                loss = task_loss + 0.5 * reg
             
-            # 反向传播
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            # Optimize with mixed precision
+            optimizer.zero_grad(set_to_none=True)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             
             total_loss += loss.item()
             

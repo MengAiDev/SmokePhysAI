@@ -32,6 +32,8 @@ class SmokeSimulator:
             torch.linspace(-1, 1, resolution, device=device),
             torch.linspace(-1, 1, resolution, device=device)
         )
+        # Precompute reusable tensors
+        self.grid = torch.stack([self.grid_x, self.grid_y], dim=-1).unsqueeze(0)
         
     def add_heat_source(self, position, intensity):
         """添加热源"""
@@ -58,10 +60,11 @@ class SmokeSimulator:
 
     def diffuse_velocity(self):
         """速度场扩散"""
-        laplacian = F.conv2d(self.velocity.unsqueeze(0).float(), 
-                           self.laplace_kernel.float(), padding=1, groups=2)
-        self.velocity += self.dt * self.viscosity * laplacian.squeeze(0)
-
+        # Use grouped convolution for efficiency
+        laplacian = F.conv2d(self.velocity.unsqueeze(0), 
+                           self.laplace_kernel, padding=1, groups=2)
+        self.velocity.add_(self.dt * self.viscosity * laplacian.squeeze(0))
+        
     def advect_velocity(self):
         """速度场对流"""
         displacement = torch.stack([
@@ -69,30 +72,28 @@ class SmokeSimulator:
             self.velocity[1] * self.dt * self.res / 10
         ]).permute(1,2,0).unsqueeze(0)
         
-        grid = torch.stack([self.grid_x, self.grid_y], dim=-1).unsqueeze(0)
         sampled = F.grid_sample(
-            self.velocity.unsqueeze(0), grid - displacement,
-            mode='bilinear', padding_mode='border'
+            self.velocity.unsqueeze(0), self.grid - displacement,
+            mode='bilinear', padding_mode='border', align_corners=False
         )
         self.velocity = sampled.squeeze(0)
-
+        
     def compute_fractal_dim(self):
-        """实时分形维度计算"""
+        """GPU-optimized fractal dimension计算"""
         threshold = 0.5
         binary = (self.density > threshold).float()
         
-        sizes = 2**np.arange(2, 8)
+        sizes = [4, 8, 16, 32, 64]  # Powers of 2
         counts = []
         
         for size in sizes:
-            pool = F.adaptive_max_pool2d(binary.unsqueeze(0).unsqueeze(0), 
-                                       (size, size))
-            counts.append(pool.sum().item())
+            pool = F.adaptive_max_pool2d(binary.unsqueeze(0).unsqueeze(0), (size, size))
+            counts.append(pool.sum())
             
-        log_sizes = np.log(sizes)
-        log_counts = np.log(counts)
-        slope, _ = np.polyfit(log_sizes, log_counts, 1)
-        return -slope
+        log_sizes = torch.log(torch.tensor(sizes, device=self.device))
+        log_counts = torch.log(torch.stack(counts).squeeze())
+        slope = torch.polyfit(log_sizes, log_counts, 1)[0]
+        return -slope.item()
 
     def step(self):
         """单步模拟"""
