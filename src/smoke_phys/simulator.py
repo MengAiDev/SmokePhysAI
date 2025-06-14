@@ -81,7 +81,7 @@ class SmokeSimulator:
         displacement = torch.stack([
             self.velocity[0] * self.dt * self.res / 10,
             self.velocity[1] * self.dt * self.res / 10
-        ]).permute(1,2,0).unsqueeze(0)
+        ], dim=-1).unsqueeze(0)  # 修复维度匹配问题
         
         sampled = F.grid_sample(
             self.velocity.unsqueeze(0), self.grid - displacement,
@@ -125,7 +125,7 @@ class SmokeSimulator:
         displacement = torch.stack([
             self.velocity[0] * self.dt * self.res / 10,
             self.velocity[1] * self.dt * self.res / 10
-        ], dim=-1).permute(1, 2, 0).unsqueeze(0)
+        ], dim=-1).unsqueeze(0)  # 修复维度匹配问题
         
         return self.grid - displacement
 

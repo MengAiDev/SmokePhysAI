@@ -11,14 +11,17 @@ from smoke_phys.augmenter import calculate_fractal_dim
 from models.model import PhysicsAwareNet
 
 class PhysicsInference:
-    def __init__(self, model_path, resolution=128):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, model_path, resolution=128, device=None):
+        # 允许用户指定设备，默认自动选择
+        self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = self._load_model(model_path)
         self.sim = SmokeSimulator(resolution=resolution, device=self.device)
         
     def _load_model(self, path):
         model = PhysicsAwareNet().to(self.device)
-        model.load_state_dict(torch.load(path))
+        # 支持从CPU保存的模型加载
+        state_dict = torch.load(path, map_location=self.device)
+        model.load_state_dict(state_dict)
         model.eval()
         return model
     

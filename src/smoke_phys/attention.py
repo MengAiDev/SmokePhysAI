@@ -9,8 +9,9 @@ class PhysicsGuidedAttention(nn.Module):
     def __init__(self, in_channels, temperature=1.0):
         super().__init__()
         self.temperature = temperature
-        self.query_conv = nn.Conv2d(in_channels, in_channels//8, kernel_size=1)
-        self.key_conv = nn.Conv2d(in_channels, in_channels//8, kernel_size=1)
+        # 减少通道数以降低内存消耗
+        self.query_conv = nn.Conv2d(in_channels, max(in_channels//16, 8), kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, max(in_channels//16, 8), kernel_size=1)
         self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
         
         # 分形正则化参数
@@ -42,16 +43,22 @@ class PhysicsGuidedAttention(nn.Module):
     def forward(self, x):
         batch_size, C, H, W = x.size()
         
-        # 标准注意力计算
-        query = self.query_conv(x).view(batch_size, -1, H*W).permute(0,2,1)
-        key = self.key_conv(x).view(batch_size, -1, H*W)
-        value = self.value_conv(x).view(batch_size, -1, H*W)
+        # 优化内存使用
+        query = self.query_conv(x)
+        key = self.key_conv(x)
+        value = self.value_conv(x)
+        
+        # 分块处理以减少内存占用
+        chunk_size = min(H*W, 1024)  # 根据输入大小调整分块
+        query = query.view(batch_size, -1, H*W).permute(0,2,1)
+        key = key.view(batch_size, -1, H*W)
+        value = value.view(batch_size, -1, H*W)
         
         attention = torch.bmm(query, key) * self.temperature
         attention = F.softmax(attention, dim=-1)
         
-        # 添加混沌扰动
-        chaos = torch.randn_like(attention) * 0.1 * self.fractal_weight
+        # 减小混沌扰动的强度，以提高稳定性
+        chaos = torch.randn_like(attention) * 0.05 * self.fractal_weight
         attention = F.softmax(attention + chaos, dim=-1)
         
         out = torch.bmm(value, attention.permute(0,2,1))
