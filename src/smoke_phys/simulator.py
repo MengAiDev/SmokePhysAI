@@ -120,6 +120,15 @@ class SmokeSimulator:
             # 异步更新温度场
             self._async_temperature_update()
             
+    def _compute_displacement(self):
+        """计算位移场"""
+        displacement = torch.stack([
+            self.velocity[0] * self.dt * self.res / 10,
+            self.velocity[1] * self.dt * self.res / 10
+        ], dim=-1).permute(1, 2, 0).unsqueeze(0)
+        
+        return self.grid - displacement
+
     def _fused_diffuse_advect(self):
         """融合扩散和对流计算"""
         with torch.cuda.amp.autocast():
