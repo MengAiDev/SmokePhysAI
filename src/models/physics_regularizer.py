@@ -72,7 +72,7 @@ class PhysicsRegularizer(nn.Module):
         
     def forward(self, 
                 predictions: dict,
-                targets: dict = None) -> dict:
+                targets: dict = None) -> dict: # type: ignore
         """
         Args:
             predictions: 包含预测结果的字典

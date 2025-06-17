@@ -6,6 +6,7 @@ data:
   sequence_length: 20
   num_train: 800
   num_val: 200
+  cache_dir: "./cache"
 
 # 模型配置
 model:

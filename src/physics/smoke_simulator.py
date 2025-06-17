@@ -82,7 +82,7 @@ class SmokeSimulator(nn.Module):
         if len(distances) > 1:
             log_distances = np.log(np.array(distances) + 1e-8)
             lyapunov = np.mean(np.diff(log_distances))
-            return max(0, lyapunov)
+            return max(0, lyapunov) # type: ignore
         
         return 0.0
         

@@ -28,7 +28,7 @@ class ChaosAttention(nn.Module):
         self.out_proj = nn.Linear(dim, dim)
         
         # 混沌动力学组件
-        self.chaos_proj = nn.Linear(dim, dim)
+        self.chaos_proj = nn.Linear(3, dim)   # 修改此行：输入维度由 dim 改为 3
         self.chaos_gate = nn.Linear(dim, 1)
         
         # Lorenz系统参数
@@ -38,9 +38,9 @@ class ChaosAttention(nn.Module):
         
     def lorenz_system(self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor, dt: float = 0.01) -> tuple:
         """Lorenz混沌系统"""
-        dx = self.lorenz_sigma * (y - x)
-        dy = x * (self.lorenz_rho - z) - y
-        dz = x * y - self.lorenz_beta * z
+        dx = self.lorenz_sigma * (y - x) # type: ignore
+        dy = x * (self.lorenz_rho - z) - y # type: ignore
+        dz = x * y - self.lorenz_beta * z # type: ignore
         
         return (x + dt * dx, y + dt * dy, z + dt * dz)
         
@@ -62,7 +62,7 @@ class ChaosAttention(nn.Module):
         
         return chaos_field
         
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor: # type: ignore
         """
         Args:
             x: [B, L, D] 输入序列
@@ -79,7 +79,7 @@ class ChaosAttention(nn.Module):
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
         
         # 生成混沌场
-        chaos_field = self.generate_chaos_field(L, B, x.device)
+        chaos_field = self.generate_chaos_field(L, B, x.device) # type: ignore
         chaos_features = self.chaos_proj(chaos_field)  # [B, L, D]
         
         # 混沌门控
@@ -92,7 +92,9 @@ class ChaosAttention(nn.Module):
         ) / math.sqrt(self.head_dim)
         
         # 组合传统注意力和混沌注意力
-        final_scores = scores + self.chaos_strength * chaos_scores * chaos_gate.transpose(-2, -1)
+        # 修改：不再分割gate，而是使用整个gate进行行缩放
+        chaos_gate = chaos_gate.unsqueeze(1)   # [B, 1, L, 1]
+        final_scores = scores + self.chaos_strength * chaos_scores * chaos_gate
         
         # 应用掩码
         if mask is not None:

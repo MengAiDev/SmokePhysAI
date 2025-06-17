@@ -200,7 +200,8 @@ def main():
         num_train=config['data']['num_train'],
         num_val=config['data']['num_val'],
         grid_size=tuple(config['data']['grid_size']),
-        device=device
+        device=device,
+        cache_dir=config['data']['cache_dir']
     )
     
     # 创建模型

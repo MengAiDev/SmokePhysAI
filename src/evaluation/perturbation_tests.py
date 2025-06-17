@@ -72,10 +72,10 @@ class PerturbationTester:
                 loss.backward()
                 
             # 更新扰动
-            delta_grad = delta.grad.data
+            delta_grad = delta.grad.data # type: ignore
             delta.data = delta.data + epsilon/num_steps * torch.sign(delta_grad)
             delta.data = torch.clamp(delta.data, -epsilon, epsilon)
-            delta.grad.zero_()
+            delta.grad.zero_() # type: ignore
             
         # 评估对抗样本
         with torch.no_grad():

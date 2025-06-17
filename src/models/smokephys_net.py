@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from physics_regularizer import PhysicsRegularizer
-from chaos_attention import ChaosAttention
+from .physics_regularizer import PhysicsRegularizer
+from .chaos_attention import ChaosAttention
 
 class SmokePhysNet(nn.Module):
     """SmokePhysAI主网络"""
@@ -83,30 +83,41 @@ class SmokePhysNet(nn.Module):
         B, C, H, W = x.shape
         
         # 1. 编码输入
-        encoded = self.input_encoder(x)  # [B, 128, input_dim, input_dim]
+        encoded = self.input_encoder(x)  # [B, 128, self.input_dim, self.input_dim]
+        pool_size = self.input_dim
+        if x.device.type == 'cpu':
+            # 当在CPU上时，降低分辨率避免内存过大，使用32x32输出
+            pool_size = min(32, self.input_dim)
+            if pool_size != self.input_dim:
+                encoded = torch.nn.functional.adaptive_avg_pool2d(encoded, (pool_size, pool_size))
         
         # 2. 展平并投影
-        flattened = encoded.flatten(2).transpose(1, 2)  # [B, L, 128]
-        features = self.feature_proj(flattened)  # [B, L, hidden_dim]
+        flattened = encoded.flatten(2).transpose(1, 2)  # [B, pool_size*pool_size, 128]
+        features = self.feature_proj(flattened)  # [B, pool_size*pool_size, hidden_dim]
         
-        # 3. 添加位置编码
-        features = features + self.pos_embedding
+        # 3. 添加位置编码：若token数发生变化，则对位置编码进行插值
+        expected_tokens = pool_size * pool_size
+        if expected_tokens != self.pos_embedding.shape[1]:
+            pos_embed = self.pos_embedding.reshape(1, self.input_dim, self.input_dim, self.hidden_dim).permute(0, 3, 1, 2)
+            pos_embed = torch.nn.functional.interpolate(pos_embed, size=(pool_size, pool_size), mode='bilinear', align_corners=False)
+            pos_embed = pos_embed.permute(0, 2, 3, 1).reshape(1, expected_tokens, self.hidden_dim)
+        else:
+            pos_embed = self.pos_embedding
+        
+        features = features + pos_embed
         
         # 4. 通过混沌感知Transformer
         for layer in self.chaos_layers:
             features = layer(features)
             
         # 5. 输出预测
-        output_features = self.output_decoder(features)  # [B, L, output_channels]
-        
+        output_features = self.output_decoder(features)
         # 6. 重建图像
-        output_reshaped = output_features.transpose(1, 2).view(
-            B, -1, self.input_dim, self.input_dim
-        )
+        output_reshaped = output_features.transpose(1, 2).view(B, -1, pool_size, pool_size)
         reconstructed = self.reconstruction_head(output_reshaped)
         
         # 7. 物理特征预测
-        pooled_features = features.mean(dim=1)  # [B, hidden_dim]
+        pooled_features = features.mean(dim=1)
         physics_pred = self.physics_head(pooled_features)
         
         results = {
