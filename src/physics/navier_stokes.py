@@ -23,9 +23,9 @@ class NavierStokesSimulator(nn.Module):
         
     def setup_grid(self):
         """设置计算网格"""
-        # 速度场 (u, v)
-        self.u = torch.zeros(self.h, self.w + 1, device=self.device)
-        self.v = torch.zeros(self.h + 1, self.w, device=self.device)
+        # 修改速度场尺寸确保维度匹配
+        self.u = torch.zeros((self.h + 1, self.w), device=self.device)  # 改为 (h+1, w)
+        self.v = torch.zeros((self.h, self.w + 1), device=self.device)  # 改为 (h, w+1)
         
         # 压力场和密度场
         self.p = torch.zeros(self.h, self.w, device=self.device)
@@ -49,9 +49,23 @@ class NavierStokesSimulator(nn.Module):
         
     def diffusion_step(self, field: torch.Tensor, viscosity: float) -> torch.Tensor:
         """扩散步骤"""
-        # 使用有限差分法实现扩散
-        padded = torch.nn.functional.pad(field, (1, 1, 1, 1), mode='replicate')
+        # 创建带有边界的临时场
+        padded = torch.zeros(field.shape[0] + 2, field.shape[1] + 2, device=self.device)
+        padded[1:-1, 1:-1] = field
         
+        # 复制边界值
+        padded[0, 1:-1] = field[0]  # 上边界
+        padded[-1, 1:-1] = field[-1]  # 下边界
+        padded[1:-1, 0] = field[:, 0]  # 左边界
+        padded[1:-1, -1] = field[:, -1]  # 右边界
+        
+        # 角点复制
+        padded[0, 0] = field[0, 0]
+        padded[0, -1] = field[0, -1]
+        padded[-1, 0] = field[-1, 0]
+        padded[-1, -1] = field[-1, -1]
+        
+        # 计算拉普拉斯算子
         laplacian = (padded[:-2, 1:-1] + padded[2:, 1:-1] + 
                     padded[1:-1, :-2] + padded[1:-1, 2:] - 4 * field)
         
@@ -117,11 +131,9 @@ class NavierStokesSimulator(nn.Module):
                 wc * field[y1, x0] + wd * field[y1, x1])
         
     def pressure_projection(self):
-        """压力投影步骤 - 使雅可比迭代"""
+        """压力投影步骤 - 使用雅可比迭代"""
         # 计算速度散度
-        div = torch.zeros_like(self.p)
-        div[1:-1, 1:-1] = (self.u[1:-1, 2:] - self.u[1:-1, 1:-1] + 
-                          self.v[2:, 1:-1] - self.v[1:-1, 1:-1])
+        div = (self.u[1:, :] - self.u[:-1, :] + self.v[:, 1:] - self.v[:, :-1]) / self.dt
         
         # 求解泊松方程
         for _ in range(20):  # 雅可比迭代
@@ -133,14 +145,14 @@ class NavierStokesSimulator(nn.Module):
             self.p = p_new
             
         # 更新速度场
-        self.u[1:-1, 1:-1] -= (self.p[1:-1, 1:-1] - self.p[1:-1, :-2])
-        self.v[1:-1, 1:-1] -= (self.p[1:-1, 1:-1] - self.p[:-2, 1:-1])
-        
+        self.u[1:-1, :] -= self.dt * (self.p[1:, :] - self.p[:-1, :])
+        self.v[:, 1:-1] -= self.dt * (self.p[:, 1:] - self.p[:, :-1])
+    
     def step(self) -> torch.Tensor:
         """执行一个时间步"""
         # 1. 添加外力 (浮力)
         buoyancy = self.density * 0.1
-        self.v[:-1, :] += self.dt * buoyancy
+        self.v[:, :-1] += self.dt * buoyancy  # 修改前为：self.v[:-1, :] += self.dt * buoyancy
         
         # 2. 扩散
         self.u = self.diffusion_step(self.u, self.viscosity)
