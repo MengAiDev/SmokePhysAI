@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from typing import Tuple, List, Optional, Dict
+from tqdm import tqdm  # 新增导入
 
 class SyntheticSmokeDataset(Dataset):
     """合成烟雾数据集"""
@@ -27,7 +28,7 @@ class SyntheticSmokeDataset(Dataset):
         data = []
         simulator = SmokeSimulator(self.grid_size, device=self.device)
         
-        for i in range(self.num_samples):
+        for i in tqdm(range(self.num_samples), desc="Generating synthetic smoke samples"):  # 修改处
             # 重置仿真器
             simulator.ns_solver.setup_grid()
             
@@ -81,9 +82,7 @@ class SyntheticSmokeDataset(Dataset):
                     'intensities': intensities
                 }
             })
-            
-            if (i + 1) % 100 == 0:
-                print(f"Generated {i + 1}/{self.num_samples} samples")
+            # ...原有进度打印代码已移除...
                 
         return data
         
