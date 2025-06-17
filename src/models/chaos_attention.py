@@ -57,9 +57,13 @@ class ChaosAttention(nn.Module):
             chaos_seq.append(torch.cat([x, y, z], dim=-1))
         
         # 扩展序列长度
-        chaos_field = torch.cat(chaos_seq, dim=1)
-        chaos_field = chaos_field.repeat(1, seq_len // chaos_field.size(1) + 1, 1)
-        return chaos_field[:, :seq_len, :]
+        # 替换旧的扩展方式（沿特征维度拼接）为沿时间维度堆叠并重复
+        chaos_field = torch.stack(chaos_seq, dim=1)  # [B, 5, 3]
+        # 计算需要重复的次数（向上取整）
+        n_repeats = (seq_len + chaos_field.size(1) - 1) // chaos_field.size(1)
+        chaos_field = chaos_field.repeat(1, n_repeats, 1)  # [B, 5 * n_repeats, 3]
+        chaos_field = chaos_field[:, :seq_len, :]  # 截取到目标长度
+        return chaos_field
         
     def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor: # type: ignore
         """
