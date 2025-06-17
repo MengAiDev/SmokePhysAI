@@ -4,7 +4,7 @@ import numpy as np
 from typing import Tuple, Optional
 
 class NavierStokesSimulator(nn.Module):
-    """简化的Navier-Stokes方程求解器，用于烟雾动力学仿真"""
+    """Simplified Navier-Stokes equation solver for smoke dynamics simulation"""
     
     def __init__(self, 
                  grid_size: Tuple[int, int] = (128, 128),
@@ -17,25 +17,25 @@ class NavierStokesSimulator(nn.Module):
         self.viscosity = viscosity
         self.device = device
         
-        # 初始化网格
+        # Initialize grid
         self.h, self.w = grid_size
         self.setup_grid()
         
     def setup_grid(self):
-        """设置计算网格"""
-        # 修改速度场尺寸确保维度匹配
-        self.u = torch.zeros((self.h + 1, self.w), device=self.device)  # 改为 (h+1, w)
-        self.v = torch.zeros((self.h, self.w + 1), device=self.device)  # 改为 (h, w+1)
+        """Setup computational grid"""
+        # Modify velocity field dimensions to ensure dimension matching
+        self.u = torch.zeros((self.h + 1, self.w), device=self.device)  # Change to (h+1, w)
+        self.v = torch.zeros((self.h, self.w + 1), device=self.device)  # Change to (h, w+1)
         
-        # 压力场和密度场
+        # Pressure and density fields
         self.p = torch.zeros(self.h, self.w, device=self.device)
         self.density = torch.zeros(self.h, self.w, device=self.device)
         
-        # 边界条件标记
+        # Boundary condition markers
         self.boundary = torch.zeros(self.h, self.w, device=self.device)
         
     def add_smoke_source(self, x: int, y: int, radius: int = 10, intensity: float = 1.0):
-        """添加烟雾源"""
+        """Add smoke source"""
         y_grid, x_grid = torch.meshgrid(
             torch.arange(self.h, device=self.device),
             torch.arange(self.w, device=self.device),
@@ -48,68 +48,68 @@ class NavierStokesSimulator(nn.Module):
         self.density[mask] += intensity * torch.exp(-dist[mask]**2 / (2 * (radius/3)**2))
         
     def diffusion_step(self, field: torch.Tensor, viscosity: float) -> torch.Tensor:
-        """扩散步骤"""
-        # 创建带有边界的临时场
+        """Diffusion step"""
+        # Create temporary field with boundaries
         padded = torch.zeros(field.shape[0] + 2, field.shape[1] + 2, device=self.device)
         padded[1:-1, 1:-1] = field
         
-        # 复制边界值
-        padded[0, 1:-1] = field[0]  # 上边界
-        padded[-1, 1:-1] = field[-1]  # 下边界
-        padded[1:-1, 0] = field[:, 0]  # 左边界
-        padded[1:-1, -1] = field[:, -1]  # 右边界
+        # Copy boundary values
+        padded[0, 1:-1] = field[0]  # Top boundary
+        padded[-1, 1:-1] = field[-1]  # Bottom boundary
+        padded[1:-1, 0] = field[:, 0]  # Left boundary
+        padded[1:-1, -1] = field[:, -1]  # Right boundary
         
-        # 角点复制
+        # Copy corner points
         padded[0, 0] = field[0, 0]
         padded[0, -1] = field[0, -1]
         padded[-1, 0] = field[-1, 0]
         padded[-1, -1] = field[-1, -1]
         
-        # 计算拉普拉斯算子
+        # Calculate Laplacian operator
         laplacian = (padded[:-2, 1:-1] + padded[2:, 1:-1] + 
                     padded[1:-1, :-2] + padded[1:-1, 2:] - 4 * field)
         
         return field + self.dt * viscosity * laplacian
         
     def advection_step(self, field: torch.Tensor, u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-        """平流步骤 - 使用反向欧拉法"""
+        """Advection step - using backward Euler method"""
         h, w = field.shape
         
-        # 创建坐标网格
+        # Create coordinate grid
         y_coords = torch.arange(h, device=self.device, dtype=torch.float32)
         x_coords = torch.arange(w, device=self.device, dtype=torch.float32)
         Y, X = torch.meshgrid(y_coords, x_coords, indexing='ij')
         
-        # 计算反向追踪的坐标
+        # Calculate back-traced coordinates
         u_interp = self.interpolate_velocity_u(u, Y, X)
         v_interp = self.interpolate_velocity_v(v, Y, X)
         
         prev_x = X - self.dt * u_interp
         prev_y = Y - self.dt * v_interp
         
-        # 边界处理
+        # Boundary handling
         prev_x = torch.clamp(prev_x, 0, w - 1)
         prev_y = torch.clamp(prev_y, 0, h - 1)
         
-        # 双线性插值
+        # Bilinear interpolation
         return self.bilinear_interpolate(field, prev_y, prev_x)
         
     def interpolate_velocity_u(self, u: torch.Tensor, y: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """插值u速度分量到密度网格"""
-        # u在(i, j+0.5)位置，需要插值到(i, j)
+        """Interpolate u velocity component to density grid"""
+        # u at position (i, j+0.5), needs interpolation to (i, j)
         x_u = x + 0.5
         x_u = torch.clamp(x_u, 0, u.shape[1] - 1)
         return self.bilinear_interpolate(u, y, x_u)
         
     def interpolate_velocity_v(self, v: torch.Tensor, y: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """插值v速度分量到密度网格"""
-        # v在(i+0.5, j)位置，需要插值到(i, j)
+        """Interpolate v velocity component to density grid"""
+        # v at position (i+0.5, j), needs interpolation to (i, j)
         y_v = y + 0.5
         y_v = torch.clamp(y_v, 0, v.shape[0] - 1)
         return self.bilinear_interpolate(v, y_v, x)
         
     def bilinear_interpolate(self, field: torch.Tensor, y: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """双线性插值"""
+        """Bilinear interpolation"""
         h, w = field.shape
         
         x0 = torch.floor(x).long()
@@ -131,12 +131,12 @@ class NavierStokesSimulator(nn.Module):
                 wc * field[y1, x0] + wd * field[y1, x1])
         
     def pressure_projection(self):
-        """压力投影步骤 - 使用雅可比迭代"""
-        # 计算速度散度
+        """Pressure projection step - using Jacobi iteration"""
+        # Calculate velocity divergence
         div = (self.u[1:, :] - self.u[:-1, :] + self.v[:, 1:] - self.v[:, :-1]) / self.dt
         
-        # 求解泊松方程
-        for _ in range(20):  # 雅可比迭代
+        # Solve Poisson equation
+        for _ in range(20):  # Jacobi iteration
             p_new = torch.zeros_like(self.p)
             p_new[1:-1, 1:-1] = 0.25 * (
                 self.p[:-2, 1:-1] + self.p[2:, 1:-1] + 
@@ -144,30 +144,30 @@ class NavierStokesSimulator(nn.Module):
             )
             self.p = p_new
             
-        # 更新速度场
+        # Update velocity field
         self.u[1:-1, :] -= self.dt * (self.p[1:, :] - self.p[:-1, :])
         self.v[:, 1:-1] -= self.dt * (self.p[:, 1:] - self.p[:, :-1])
     
     def step(self) -> torch.Tensor:
-        """执行一个时间步"""
-        # 1. 添加外力 (浮力)
+        """Execute one time step"""
+        # 1. Add external forces (buoyancy)
         buoyancy = self.density * 0.1
-        self.v[:, :-1] += self.dt * buoyancy  # 修改前为：self.v[:-1, :] += self.dt * buoyancy
+        self.v[:, :-1] += self.dt * buoyancy  # Changed from: self.v[:-1, :] += self.dt * buoyancy
         
-        # 2. 扩散
+        # 2. Diffusion
         self.u = self.diffusion_step(self.u, self.viscosity)
         self.v = self.diffusion_step(self.v, self.viscosity)
         self.density = self.diffusion_step(self.density, self.viscosity * 0.1)
         
-        # 3. 压力投影
+        # 3. Pressure projection
         self.pressure_projection()
         
-        # 4. 平流
+        # 4. Advection
         self.u = self.advection_step(self.u, self.u, self.v)
         self.v = self.advection_step(self.v, self.u, self.v)
         self.density = self.advection_step(self.density, self.u, self.v)
         
-        # 5. 密度衰减
+        # 5. Density decay
         self.density *= 0.995
         
         return self.density.clone()

@@ -6,7 +6,7 @@ from .navier_stokes import NavierStokesSimulator
 from .fractal_generator import FractalGenerator
 
 class SmokeSimulator(nn.Module):
-    """完整的烟雾物理仿真系统"""
+    """Complete smoke physics simulation system"""
     
     def __init__(self,
                  grid_size: tuple = (128, 128),
@@ -19,25 +19,25 @@ class SmokeSimulator(nn.Module):
         self.fractal_gen = FractalGenerator(device)
         self.device = device
         
-        # 烟雾历史记录
+        # Smoke history record
         self.history = []
         self.max_history = 100
         
     def add_incense_source(self, positions: list, intensities: list):
-        """添加香薰烟雾源"""
+        """Add incense smoke source"""
         for (x, y), intensity in zip(positions, intensities):
             self.ns_solver.add_smoke_source(x, y, radius=8, intensity=intensity)
             
     def simulate_step(self, add_fractal: bool = True) -> torch.Tensor:
-        """执行一个仿真步骤"""
-        # 基础物理仿真
+        """Execute one simulation step"""
+        # Basic physical simulation
         density = self.ns_solver.step()
         
-        # 添加分形特性
+        # Add fractal characteristics
         if add_fractal:
             density = self.fractal_gen.apply_fractal_perturbation(density, intensity=0.05)
             
-        # 记录历史
+        # Record history
         self.history.append(density.clone())
         if len(self.history) > self.max_history:
             self.history.pop(0)
@@ -45,17 +45,17 @@ class SmokeSimulator(nn.Module):
         return density
         
     def get_chaos_features(self) -> dict:
-        """计算混沌特征"""
+        """Calculate chaos features"""
         if len(self.history) < 10:
             return {}
             
-        # 计算李雅普诺夫指数
+        # Calculate Lyapunov exponent
         lyapunov = self.compute_lyapunov_exponent()
         
-        # 计算分形维数
+        # Calculate fractal dimension
         fractal_dim = self.compute_fractal_dimension()
         
-        # 计算熵
+        # Calculate entropy
         entropy = self.compute_entropy()
         
         return {
@@ -65,20 +65,20 @@ class SmokeSimulator(nn.Module):
         }
         
     def compute_lyapunov_exponent(self) -> float:
-        """计算李雅普诺夫指数"""
+        """Calculate Lyapunov exponent"""
         if len(self.history) < 20:
             return 0.0
             
-        # 简化的李雅普诺夫指数计算
+        # Simplified Lyapunov exponent calculation
         states = torch.stack(self.history[-20:])
         
-        # 计算相邻状态间的距离
+        # Calculate distances between adjacent states
         distances = []
         for i in range(len(states) - 1):
             dist = torch.norm(states[i+1] - states[i])
             distances.append(dist.item())
             
-        # 计算平均发散率
+        # Calculate average divergence rate
         if len(distances) > 1:
             log_distances = np.log(np.array(distances) + 1e-8)
             lyapunov = np.mean(np.diff(log_distances))
@@ -87,16 +87,16 @@ class SmokeSimulator(nn.Module):
         return 0.0
         
     def compute_fractal_dimension(self) -> float:
-        """计算分形维数 (box-counting method)"""
+        """Calculate fractal dimension (box-counting method)"""
         if not self.history:
             return 0.0
             
         current_state = self.history[-1]
         
-        # 二值化
+        # Binarization
         binary = (current_state > current_state.mean()).float()
         
-        # 不同尺度的box counting
+        # Box counting at different scales
         scales = [2, 4, 8, 16, 32]
         counts = []
         
@@ -114,7 +114,7 @@ class SmokeSimulator(nn.Module):
                         
             counts.append(count)
             
-        # 计算分形维数
+        # Calculate fractal dimension
         if len(counts) > 1:
             log_scales = np.log(scales)
             log_counts = np.log(np.array(counts) + 1)
@@ -124,17 +124,17 @@ class SmokeSimulator(nn.Module):
         return 1.0
         
     def compute_entropy(self) -> float:
-        """计算信息熵"""
+        """Calculate information entropy"""
         if not self.history:
             return 0.0
             
         current_state = self.history[-1]
         
-        # 离散化
-        current_state_cpu = current_state.detach().cpu()  # 确保在CPU上
+        # Discretization
+        current_state_cpu = current_state.detach().cpu()  # Ensure on CPU
         hist = torch.histogram(current_state_cpu.flatten(), bins=256, range=(0, 1))
         probs = hist.hist.float() / hist.hist.sum()
         
-        # 计算熵
+        # Calculate entropy
         entropy = -torch.sum(probs * torch.log2(probs + 1e-8))
         return entropy.item()

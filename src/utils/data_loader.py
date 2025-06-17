@@ -1,26 +1,26 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
-import os  # 新增：用于根据 CPU 核心数动态调整
+import os  # Added: For dynamically adjusting based on CPU cores
 from typing import Tuple, List, Optional, Dict
-from tqdm import tqdm  # 新增导入
-import pickle  # 新增
+from tqdm import tqdm  # Added import
+import pickle  # Added
 
 
 class SyntheticSmokeDataset(Dataset):
-    """合成烟雾数据集"""
+    """Synthetic smoke dataset"""
     
     def __init__(self,
                  num_samples: int = 1000,
                  grid_size: Tuple[int, int] = (128, 128),
                  sequence_length: int = 20,
                  device: str = 'cuda',
-                 cache_path: Optional[str] = None):  # 新增参数
+                 cache_path: Optional[str] = None):  # Added parameter
         self.num_samples = num_samples
         self.grid_size = grid_size
         self.sequence_length = sequence_length
         self.device = device
-        self.cache_path = cache_path  # 保存缓存路径
+        self.cache_path = cache_path  # Save cache path
         
         if self.cache_path and os.path.exists(self.cache_path):
             with open(self.cache_path, 'rb') as f:
@@ -29,23 +29,23 @@ class SyntheticSmokeDataset(Dataset):
         else:
             self.data = self._generate_synthetic_data()
             if self.cache_path:
-                os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)  # 新增：确保目录存在
+                os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)  # Added: Ensure directory exists
                 with open(self.cache_path, 'wb') as f:
                     pickle.dump(self.data, f)
                 print(f"Saved synthetic data to {self.cache_path}")
                 
     def _generate_synthetic_data(self) -> List[Dict]:
-        """生成合成数据"""
+        """Generate synthetic data"""
         from ..physics.smoke_simulator import SmokeSimulator
         
         data = []
         simulator = SmokeSimulator(self.grid_size, device=self.device)
         
-        for i in tqdm(range(self.num_samples), desc="Generating synthetic smoke samples"):  # 修改处
-            # 重置仿真器
+        for i in tqdm(range(self.num_samples), desc="Generating synthetic smoke samples"):  # Modified
+            # Reset simulator
             simulator.ns_solver.setup_grid()
             
-            # 随机源配置
+            # Random source configuration
             num_sources = np.random.randint(1, 4)
             positions = []
             intensities = []
@@ -59,7 +59,7 @@ class SyntheticSmokeDataset(Dataset):
                 
             simulator.add_incense_source(positions, intensities)
             
-            # 生成序列
+            # Generate sequence
             sequence = []
             chaos_features = []
             
@@ -67,13 +67,13 @@ class SyntheticSmokeDataset(Dataset):
                 density = simulator.simulate_step()
                 sequence.append(density.clone())
                 
-                # 获取混沌特征
-                if t >= 10:  # 等待稳定
+                # Get chaos features
+                if t >= 10:  # Wait for stabilization
                     features = simulator.get_chaos_features()
                     if features:
                         chaos_features.append(features)
                         
-            # 计算平均混沌特征
+            # Calculate average chaos features
             if chaos_features:
                 avg_chaos = {
                     'lyapunov_exponent': np.mean([f.get('lyapunov_exponent', 0) for f in chaos_features]),
@@ -95,7 +95,6 @@ class SyntheticSmokeDataset(Dataset):
                     'intensities': intensities
                 }
             })
-            # ...原有进度打印代码已移除...
                 
         return data
         
@@ -105,11 +104,11 @@ class SyntheticSmokeDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict:
         sample = self.data[idx]
         
-        # 随机选择一帧作为输入
+        # Randomly select a frame as input
         frame_idx = np.random.randint(5, self.sequence_length - 5)
-        input_frame = sample['sequence'][frame_idx].unsqueeze(0)  # 添加通道维度
+        input_frame = sample['sequence'][frame_idx].unsqueeze(0)  # Add channel dimension
         
-        # 目标是下一帧
+        # Target is next frame
         target_frame = sample['sequence'][frame_idx + 1].unsqueeze(0)
         
         return {
@@ -130,13 +129,13 @@ def create_data_loaders(batch_size: int = 16,
                         grid_size: Tuple[int, int] = (128, 128),
                         device: str = 'cuda',
                         cache_dir: Optional[str] = None) -> Tuple[DataLoader, DataLoader]:
-    """创建训练和验证数据加载器"""
+    """Create training and validation data loaders"""
     
-    # 新增：根据 CPU 核心数设置 num_workers
+    # Added: Set num_workers based on CPU cores
     cpu_count = os.cpu_count()
     num_workers = cpu_count if cpu_count is not None else 0
 
-    # 根据设备调整 num_workers 和 pin_memory
+    # Adjust num_workers and pin_memory based on device
     if (isinstance(device, str) and device.lower() == "cpu") or (isinstance(device, torch.device) and device.type == "cpu"):
         num_workers = 0
         pin_memory_val = False
@@ -150,36 +149,36 @@ def create_data_loaders(batch_size: int = 16,
         train_cache = None
         val_cache = None
     
-    # 训练集
+    # Training set
     train_dataset = SyntheticSmokeDataset(
         num_samples=num_train,
         grid_size=grid_size,
         device=device,
-        cache_path=train_cache  # 传递缓存路径
+        cache_path=train_cache  # Pass cache path
     )
     
-    # 验证集
+    # Validation set
     val_dataset = SyntheticSmokeDataset(
         num_samples=num_val,
         grid_size=grid_size,
         device=device,
-        cache_path=val_cache  # 传递缓存路径
+        cache_path=val_cache  # Pass cache path
     )
     
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=num_workers,  # 修改：根据设备设定的 num_workers
-        pin_memory=pin_memory_val  # 修改：根据设备设置是否使用 pin_memory
+        num_workers=num_workers,  # Modified: Use device-based num_workers
+        pin_memory=pin_memory_val  # Modified: Use device-based pin_memory
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,  # 修改：根据设备设定的 num_workers
-        pin_memory=pin_memory_val  # 修改：根据设备设置是否使用 pin_memory
+        num_workers=num_workers,  # Modified: Use device-based num_workers
+        pin_memory=pin_memory_val  # Modified: Use device-based pin_memory
     )
     
     return train_loader, val_loader

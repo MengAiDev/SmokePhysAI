@@ -5,7 +5,7 @@ import numpy as np
 from typing import List, Dict, Optional
 
 class SmokeVisualizer:
-    """烟雾可视化工具"""
+    """Smoke visualization tool"""
     
     def __init__(self, figsize: tuple = (12, 8)):
         self.figsize = figsize
@@ -14,7 +14,7 @@ class SmokeVisualizer:
     def plot_smoke_evolution(self, 
                             density_sequence: List[torch.Tensor],
                             save_path: Optional[str] = None):
-        """绘制烟雾演化过程"""
+        """Plot smoke evolution process"""
         num_frames = len(density_sequence)
         cols = min(8, num_frames)
         rows = (num_frames + cols - 1) // cols
@@ -27,7 +27,7 @@ class SmokeVisualizer:
             row, col = divmod(i, cols)
             ax = axes[row, col] if rows > 1 else axes[col]
             
-            # 转换为numpy
+            # Convert to numpy
             if isinstance(density, torch.Tensor):
                 density_np = density.detach().cpu().numpy()
             else:
@@ -37,7 +37,7 @@ class SmokeVisualizer:
             ax.set_title(f'Frame {i}')
             ax.axis('off')
             
-        # 隐藏空白子图
+        # Hide empty subplots
         for i in range(num_frames, rows * cols):
             row, col = divmod(i, cols)
             ax = axes[row, col] if rows > 1 else axes[col]
@@ -52,7 +52,7 @@ class SmokeVisualizer:
     def plot_chaos_features(self, 
                            chaos_metrics: Dict[str, List[float]],
                            save_path: Optional[str] = None):
-        """绘制混沌特征"""
+        """Plot chaos features"""
         fig, axes = plt.subplots(1, 3, figsize=self.figsize)
         
         metrics = ['lyapunov_exponent', 'fractal_dimension', 'entropy']
@@ -75,13 +75,13 @@ class SmokeVisualizer:
                           attention_weights: torch.Tensor,
                           input_image: torch.Tensor,
                           save_path: Optional[str] = None):
-        """可视化注意力权重"""
-        # 取第一个头的注意力权重
+        """Visualize attention weights"""
+        # Get attention weights from first head
         attn = attention_weights[0, 0].detach().cpu().numpy()  # [seq_len, seq_len]
         
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
         
-        # 原始图像
+        # Original image
         if isinstance(input_image, torch.Tensor):
             img = input_image[0, 0].detach().cpu().numpy()
         else:
@@ -91,14 +91,14 @@ class SmokeVisualizer:
         axes[0].set_title('Input Smoke')
         axes[0].axis('off')
         
-        # 注意力权重矩阵
+        # Attention weight matrix
         im1 = axes[1].imshow(attn, cmap='viridis')
         axes[1].set_title('Attention Matrix')
         axes[1].set_xlabel('Key Position')
         axes[1].set_ylabel('Query Position')
         plt.colorbar(im1, ax=axes[1])
         
-        # 平均注意力权重
+        # Average attention weights
         avg_attn = attn.mean(axis=0)
         sqrt_len = int(np.sqrt(len(avg_attn)))
         

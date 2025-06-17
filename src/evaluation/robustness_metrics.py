@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 class RobustnessEvaluator:
-    """鲁棒性评估器"""
+    """Robustness evaluator"""
     
     def __init__(self, device: str = 'cuda'):
         self.device = device
@@ -16,13 +16,13 @@ class RobustnessEvaluator:
                                    model: nn.Module,
                                    test_data: torch.Tensor,
                                    physics_targets: Dict) -> Dict:
-        """评估物理一致性"""
+        """Evaluate physics consistency"""
         model.eval()
         
         with torch.no_grad():
             predictions = model(test_data)
             
-        # 计算物理特征误差
+        # Calculate physics feature errors
         physics_pred = predictions['physics_features']
         
         metrics = {}
@@ -51,7 +51,7 @@ class RobustnessEvaluator:
                                       model: nn.Module,
                                       test_data: torch.Tensor,
                                       targets: torch.Tensor) -> Dict:
-        """评估重建质量"""
+        """Evaluate reconstruction quality"""
         model.eval()
         
         with torch.no_grad():
@@ -75,8 +75,8 @@ class RobustnessEvaluator:
         
     def compute_ssim(self, pred: torch.Tensor, target: torch.Tensor, 
                      window_size: int = 11, sigma: float = 1.5) -> float:
-        """计算SSIM"""
-        # 简化的SSIM实现
+        """Compute SSIM"""
+        # Simplified SSIM implementation
         mu1 = F.avg_pool2d(pred, window_size, stride=1, padding=window_size//2)
         mu2 = F.avg_pool2d(target, window_size, stride=1, padding=window_size//2)
         
@@ -97,7 +97,7 @@ class RobustnessEvaluator:
         return ssim_map.mean().item()
         
     def compute_psnr(self, pred: torch.Tensor, target: torch.Tensor) -> float:
-        """计算PSNR"""
+        """Compute PSNR"""
         mse = F.mse_loss(pred, target)
         psnr = 20 * torch.log10(1.0 / torch.sqrt(mse))
         return psnr.item()

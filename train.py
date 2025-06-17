@@ -17,22 +17,22 @@ from src.models.physics_regularizer import PhysicsRegularizer
 
 
 def load_config(config_path: str) -> dict:
-    """加载配置文件"""
+    """Load configuration file"""
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     return config
 
 def setup_experiment(config: dict) -> tuple:
-    """设置实验环境"""
-    # 创建实验目录
+    """Set up experiment environment"""
+    # Create experiment directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     exp_dir = os.path.join('experiments', f'smokephys_{timestamp}')
     os.makedirs(exp_dir, exist_ok=True)
     
-    # 设置tensorboard
+    # Set up tensorboard
     writer = SummaryWriter(os.path.join(exp_dir, 'logs'))
     
-    # 设备
+    # Device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
@@ -45,7 +45,7 @@ def train_epoch(model: nn.Module,
                device: str,
                epoch: int,
                writer: SummaryWriter) -> Dict[str, float]:
-    """训练一个epoch"""
+    """Train one epoch"""
     model.train()
     
     total_loss = 0.0
@@ -55,23 +55,23 @@ def train_epoch(model: nn.Module,
     
     pbar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}', leave=True)
     for batch_idx, batch in enumerate(pbar):
-        # 移动数据到设备
+        # Move data to device
         inputs = batch['input'].to(device)
         targets = batch['target'].to(device)
         chaos_targets = batch['chaos_features'].to(device)
         
         optimizer.zero_grad()
         
-        # 前向传播
+        # Forward pass
         outputs = model(inputs)
         
-        # 重建损失
+        # Reconstruction loss
         recon_loss = F.mse_loss(outputs['reconstructed'], targets)
         
-        # 混沌特征损失
+        # Chaos feature loss
         chaos_loss = F.mse_loss(outputs['physics_features'], chaos_targets)
         
-        # 物理正则化
+        # Physics regularization
         physics_losses = physics_regularizer({
             'density': outputs['reconstructed'],
             'density_sequence': batch['sequence'].to(device)
@@ -81,24 +81,24 @@ def train_epoch(model: nn.Module,
         
         physics_loss = physics_losses['total_physics_loss']
         
-        # 总损失
+        # Total loss
         total_batch_loss = recon_loss + 0.1 * chaos_loss + 0.05 * physics_loss
         
-        # 反向传播
+        # Backward pass
         total_batch_loss.backward()
         
-        # 梯度裁剪
+        # Gradient clipping
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         
         optimizer.step()
         
-        # 累积损失
+        # Accumulate losses
         total_loss += total_batch_loss.item()
         total_recon_loss += recon_loss.item()
         total_physics_loss += physics_loss.item()
         total_chaos_loss += chaos_loss.item()
         
-        # 记录到tensorboard
+        # Log to tensorboard
         global_step = epoch * len(train_loader) + batch_idx
         if batch_idx % 50 == 0:
             writer.add_scalar('Train/Batch_Total_Loss', total_batch_loss.item(), global_step)
@@ -106,14 +106,14 @@ def train_epoch(model: nn.Module,
             writer.add_scalar('Train/Batch_Physics_Loss', physics_loss.item(), global_step)
             writer.add_scalar('Train/Batch_Chaos_Loss', chaos_loss.item(), global_step)
         
-        # 更新进度条描述
+        # Update progress bar description
         pbar.set_postfix({
             'loss': f'{total_batch_loss.item():.4f}',
             'recon': f'{recon_loss.item():.4f}',
             'phys': f'{physics_loss.item():.4f}'
         })
             
-    # 平均损失
+    # Average losses
     avg_loss = total_loss / len(train_loader)
     avg_recon_loss = total_recon_loss / len(train_loader)
     avg_physics_loss = total_physics_loss / len(train_loader)
@@ -130,7 +130,7 @@ def validate_epoch(model: nn.Module,
                   val_loader: DataLoader,
                   physics_regularizer: PhysicsRegularizer,
                   device: str) -> Dict[str, float]:
-    """验证一个epoch"""
+    """Validate one epoch"""
     model.eval()
     
     total_loss = 0.0
@@ -147,7 +147,7 @@ def validate_epoch(model: nn.Module,
             
             outputs = model(inputs)
             
-            # 损失计算
+            # Calculate losses
             recon_loss = F.mse_loss(outputs['reconstructed'], targets)
             chaos_loss = F.mse_loss(outputs['physics_features'], chaos_targets)
             
@@ -166,7 +166,7 @@ def validate_epoch(model: nn.Module,
             total_physics_loss += physics_loss.item()
             total_chaos_loss += chaos_loss.item()
             
-            # 更新进度条描述
+            # Update progress bar description
             pbar.set_postfix({
                 'loss': f'{total_batch_loss.item():.4f}',
                 'recon': f'{recon_loss.item():.4f}'
@@ -188,13 +188,13 @@ def main():
     
     args = parser.parse_args()
     
-    # 加载配置
+    # Load config
     config = load_config(args.config)
     
-    # 设置实验
+    # Setup experiment
     exp_dir, writer, device = setup_experiment(config)
     
-    # 创建数据加载器
+    # Create data loaders
     train_loader, val_loader = create_data_loaders(
         batch_size=config['training']['batch_size'],
         num_train=config['data']['num_train'],
@@ -204,7 +204,7 @@ def main():
         cache_dir=config['data']['cache_dir']
     )
     
-    # 创建模型
+    # Create model
     from src.models.smokephys_net import SmokePhysNet
     from src.models.physics_regularizer import PhysicsRegularizer
     
@@ -222,7 +222,7 @@ def main():
         energy_weight=config['physics']['energy_weight']
     )
     
-    # 优化器和调度器
+    # Optimizer and scheduler
     optimizer = optim.AdamW(
         model.parameters(),
         lr=config['training']['learning_rate'],
@@ -234,13 +234,13 @@ def main():
         T_max=config['training']['num_epochs']
     )
     
-    # 训练循环
+    # Training loop
     best_val_loss = float('inf')
     
     for epoch in range(config['training']['num_epochs']):
         print(f"\nEpoch {epoch + 1}/{config['training']['num_epochs']}")
         
-        # 训练和验证
+        # Train and validate
         train_metrics = train_epoch(
             model, train_loader, optimizer, physics_regularizer,
             device, epoch, writer
@@ -250,21 +250,21 @@ def main():
             model, val_loader, physics_regularizer, device
         )
         
-        # 学习率调度
+        # Learning rate scheduling
         scheduler.step()
         
-        # 记录到tensorboard
+        # Log to tensorboard
         writer.add_scalar('Train/Epoch_Loss', train_metrics['total_loss'], epoch)
         writer.add_scalar('Val/Epoch_Loss', val_metrics['total_loss'], epoch)
         writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
         
-        # 打印指标
+        # Print metrics
         print(f"\nEpoch Summary:")
         print(f"Train Loss: {train_metrics['total_loss']:.4f}")
         print(f"Val Loss: {val_metrics['total_loss']:.4f}")
         print(f"Learning Rate: {optimizer.param_groups[0]['lr']:.6f}")
-
-        # 保存最佳模型
+        
+        # Save best model
         if val_metrics['total_loss'] < best_val_loss:
             best_val_loss = val_metrics['total_loss']
             torch.save({

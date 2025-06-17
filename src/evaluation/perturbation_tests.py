@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from typing import List, Dict, Callable
 
 class PerturbationTester:
-    """扰动测试器"""
+    """Perturbation tester"""
     
     def __init__(self, device: str = 'cuda'):
         self.device = device
@@ -15,17 +15,17 @@ class PerturbationTester:
                            model: nn.Module,
                            test_data: torch.Tensor,
                            noise_levels: List[float] = [0.01, 0.05, 0.1, 0.2]) -> Dict:
-        """高斯噪声鲁棒性测试"""
+        """Gaussian noise robustness test"""
         model.eval()
         results = {}
         
-        # 基线性能
+        # Baseline performance
         with torch.no_grad():
             baseline = model(test_data)
             baseline_features = baseline['latent_features']
             
         for noise_level in noise_levels:
-            # 添加高斯噪声
+            # Add Gaussian noise
             noise = torch.randn_like(test_data) * noise_level
             noisy_data = test_data + noise
             noisy_data = torch.clamp(noisy_data, 0, 1)
@@ -34,7 +34,7 @@ class PerturbationTester:
                 noisy_pred = model(noisy_data)
                 noisy_features = noisy_pred['latent_features']
                 
-            # 计算特征稳定性
+            # Calculate feature stability
             feature_stability = F.cosine_similarity(
                 baseline_features, noisy_features, dim=1
             ).mean().item()
@@ -54,10 +54,10 @@ class PerturbationTester:
                         test_data: torch.Tensor,
                         epsilon: float = 0.1,
                         num_steps: int = 10) -> Dict:
-        """对抗样本鲁棒性测试"""
+        """Adversarial sample robustness test"""
         model.eval()
         
-        # PGD攻击
+        # PGD attack
         delta = torch.zeros_like(test_data, requires_grad=True)
         
         for _ in range(num_steps):
@@ -67,17 +67,17 @@ class PerturbationTester:
                 
                 output = model(adversarial_data)
                 
-                # 最大化重建误差
+                # Maximize reconstruction error
                 loss = -F.mse_loss(output['reconstructed'], test_data)
                 loss.backward()
                 
-            # 更新扰动
+            # Update perturbation
             delta_grad = delta.grad.data # type: ignore
             delta.data = delta.data + epsilon/num_steps * torch.sign(delta_grad)
             delta.data = torch.clamp(delta.data, -epsilon, epsilon)
             delta.grad.zero_() # type: ignore
             
-        # 评估对抗样本
+        # Evaluate adversarial samples
         with torch.no_grad():
             baseline = model(test_data)
             adversarial_output = model(torch.clamp(test_data + delta, 0, 1))
@@ -97,15 +97,15 @@ class PerturbationTester:
                                  model: nn.Module,
                                  simulator,
                                  num_tests: int = 50) -> Dict:
-        """物理扰动测试"""
+        """Physics perturbation test"""
         model.eval()
         results = []
         
         for _ in range(num_tests):
-            # 生成随机烟雾场景
+            # Generate random smoke scenario
             simulator.ns_solver.setup_grid()
             
-            # 添加随机源
+            # Add random sources
             num_sources = np.random.randint(1, 4)
             for _ in range(num_sources):
                 x = np.random.randint(20, simulator.ns_solver.w - 20)
@@ -113,20 +113,20 @@ class PerturbationTester:
                 intensity = np.random.uniform(0.5, 2.0)
                 simulator.add_incense_source([(x, y)], [intensity])
                 
-            # 仿真序列
+            # Simulation sequence
             sequence = []
             for t in range(20):
                 density = simulator.simulate_step()
                 sequence.append(density.unsqueeze(0).unsqueeze(0))
                 
-            # 评估模型预测一致性
+            # Evaluate model prediction consistency
             with torch.no_grad():
                 predictions = []
                 for frame in sequence:
                     pred = model(frame)
                     predictions.append(pred['physics_features'])
                     
-            # 计算预测稳定性
+            # Calculate prediction stability
             pred_tensor = torch.stack(predictions)
             pred_var = torch.var(pred_tensor, dim=0).mean().item()
             
