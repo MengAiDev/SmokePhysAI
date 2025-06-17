@@ -131,7 +131,8 @@ class SmokeSimulator(nn.Module):
         current_state = self.history[-1]
         
         # 离散化
-        hist = torch.histogram(current_state.flatten(), bins=256, range=(0, 1))
+        current_state_cpu = current_state.detach().cpu()  # 确保在CPU上
+        hist = torch.histogram(current_state_cpu.flatten(), bins=256, range=(0, 1))
         probs = hist.hist.float() / hist.hist.sum()
         
         # 计算熵
