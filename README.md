@@ -29,6 +29,13 @@ Train from scatch:
 python train.py --config config/config.yaml
 ```
 
+Run inference:
+```bash
+python inference.py --model_path checkpoints/model.pth --config config/config.yaml
+```
+
+Please see the inference_output/ directory for the results, which trained by myself on RTX 3090.
+
 ## Contributing
 Contributions are welcome!
 
