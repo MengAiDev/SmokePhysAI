@@ -195,3 +195,4 @@ cython_debug/
 
 experiments/
 cache/
+model.pth
