@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+import os  # 新增：用于根据 CPU 核心数动态调整
 from typing import Tuple, List, Optional, Dict
 from tqdm import tqdm  # 新增导入
 
@@ -112,11 +113,14 @@ class SyntheticSmokeDataset(Dataset):
 
 
 def create_data_loaders(batch_size: int = 16,
-                       num_train: int = 800,
-                       num_val: int = 200,
-                       grid_size: Tuple[int, int] = (128, 128),
-                       device: str = 'cuda') -> Tuple[DataLoader, DataLoader]:
+                        num_train: int = 800,
+                        num_val: int = 200,
+                        grid_size: Tuple[int, int] = (128, 128),
+                        device: str = 'cuda') -> Tuple[DataLoader, DataLoader]:
     """创建训练和验证数据加载器"""
+    
+    # 新增：根据 CPU 核心数设置 num_workers
+    num_workers = os.cpu_count() if os.cpu_count() is not None else 0
     
     # 训练集
     train_dataset = SyntheticSmokeDataset(
@@ -136,7 +140,7 @@ def create_data_loaders(batch_size: int = 16,
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,  # 设为0避免GPU内存问题
+        num_workers=num_workers,  # 修改处
         pin_memory=True
     )
     
@@ -144,7 +148,7 @@ def create_data_loaders(batch_size: int = 16,
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=num_workers,  # 修改处
         pin_memory=True
     )
     
