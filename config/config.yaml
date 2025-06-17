@@ -1,0 +1,36 @@
+# SmokePhysAI Configuration
+
+# 数据配置
+data:
+  grid_size: [128, 128]
+  sequence_length: 20
+  num_train: 800
+  num_val: 200
+
+# 模型配置
+model:
+  input_dim: 128
+  hidden_dim: 512
+  num_layers: 6
+  num_heads: 8
+  output_channels: 64
+  chaos_strength: 0.1
+
+# 物理约束配置
+physics:
+  conservation_weight: 1.0
+  continuity_weight: 1.0
+  energy_weight: 0.5
+
+# 训练配置
+training:
+  batch_size: 16
+  num_epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.01
+
+# 仿真配置
+simulation:
+  dt: 0.01
+  viscosity: 0.001
+  grid_size: [128, 128]
