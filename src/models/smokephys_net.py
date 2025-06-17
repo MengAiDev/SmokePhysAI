@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from .physics_regularizer import PhysicsRegularizer
 from .chaos_attention import ChaosAttention
 
@@ -84,12 +85,11 @@ class SmokePhysNet(nn.Module):
         
         # 1. 编码输入
         encoded = self.input_encoder(x)  # [B, 128, self.input_dim, self.input_dim]
-        pool_size = self.input_dim
-        if x.device.type == 'cpu':
-            # 当在CPU上时，降低分辨率避免内存过大，使用32x32输出
-            pool_size = min(32, self.input_dim)
-            if pool_size != self.input_dim:
-                encoded = torch.nn.functional.adaptive_avg_pool2d(encoded, (pool_size, pool_size))
+        
+        # 新增：降低分辨率以减少内存使用
+        reduced_size = 32  # 将空间维度减少到32x32
+        encoded = F.adaptive_avg_pool2d(encoded, (reduced_size, reduced_size))
+        pool_size = reduced_size
         
         # 2. 展平并投影
         flattened = encoded.flatten(2).transpose(1, 2)  # [B, pool_size*pool_size, 128]

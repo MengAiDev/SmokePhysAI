@@ -45,22 +45,21 @@ class ChaosAttention(nn.Module):
         return (x + dt * dx, y + dt * dy, z + dt * dz)
         
     def generate_chaos_field(self, seq_len: int, batch_size: int, device: str) -> torch.Tensor:
-        """生成混沌场"""
-        # 初始化Lorenz系统
-        x = torch.randn(batch_size, seq_len, device=device)
-        y = torch.randn(batch_size, seq_len, device=device)
-        z = torch.randn(batch_size, seq_len, device=device)
+        """生成混沌场 (优化内存版本)"""
+        # 使用更小的初始状态和迭代次数
+        x = torch.randn(batch_size, 1, device=device) * 0.1
+        y = torch.randn(batch_size, 1, device=device) * 0.1
+        z = torch.randn(batch_size, 1, device=device) * 0.1
         
-        # 迭代生成混沌轨迹
         chaos_seq = []
-        for _ in range(10):  # 迭代10次
+        for _ in range(5):  # 减少迭代次数
             x, y, z = self.lorenz_system(x, y, z)
-            chaos_seq.append(torch.stack([x, y, z], dim=-1))
-            
-        # 组合混沌特征
-        chaos_field = torch.stack(chaos_seq, dim=1).mean(dim=1)  # [B, L, 3]
+            chaos_seq.append(torch.cat([x, y, z], dim=-1))
         
-        return chaos_field
+        # 扩展序列长度
+        chaos_field = torch.cat(chaos_seq, dim=1)
+        chaos_field = chaos_field.repeat(1, seq_len // chaos_field.size(1) + 1, 1)
+        return chaos_field[:, :seq_len, :]
         
     def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor: # type: ignore
         """
